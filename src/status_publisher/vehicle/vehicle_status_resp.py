@@ -81,9 +81,7 @@ class VehicleStatusRespPublisher(
             msg = f"Vehicle status time drifted more than 15 minutes from current time: {vehicle_status_drift}. Server reported {vehicle_status_time}"
             if not self.__accept_drifted_status:
                 raise VehicleStatusDriftException(msg)
-            LOG.warning(
-                "%s. Accepting basic vehicle status but ignoring GPS data", msg
-            )
+            LOG.warning("%s. Accepting basic vehicle status but ignoring GPS data", msg)
             gps_position = None
 
         basic_vehicle_status = vehicle_status.basicVehicleStatus

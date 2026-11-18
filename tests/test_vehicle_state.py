@@ -406,7 +406,9 @@ class TestVehicleState(unittest.IsolatedAsyncioTestCase):
         result = state.handle_vehicle_status(resp)
 
         assert result.raw_soc == DRIVETRAIN_SOC_VEHICLE
-        assert self.get_topic(mqtt_topics.REFRESH_LAST_VEHICLE_STATE) in self.publisher.map
+        assert (
+            self.get_topic(mqtt_topics.REFRESH_LAST_VEHICLE_STATE) in self.publisher.map
+        )
         assert self.get_topic(mqtt_topics.LOCATION_POSITION) not in self.publisher.map
         assert self.get_topic(mqtt_topics.LOCATION_LATITUDE) not in self.publisher.map
         assert self.get_topic(mqtt_topics.LOCATION_LONGITUDE) not in self.publisher.map
