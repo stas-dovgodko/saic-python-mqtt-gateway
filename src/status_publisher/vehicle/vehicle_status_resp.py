@@ -40,6 +40,7 @@ class VehicleStatusRespProcessingResult:
     fuel_range_elec: int | None
     raw_soc: int | None
     raw_mileage: int | None
+    gps_position: GpsPosition | None
 
 
 class VehicleStatusRespPublisher(
@@ -113,6 +114,7 @@ class VehicleStatusRespPublisher(
             raw_soc=basic_vehicle_status_result.raw_soc,
             fuel_range_elec=basic_vehicle_status_result.fuel_rage_elec,
             raw_mileage=basic_vehicle_status_result.raw_mileage,
+            gps_position=gps_position,
         )
 
     def __on_gps_position(
