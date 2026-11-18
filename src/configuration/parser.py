@@ -133,6 +133,7 @@ def __setup_saic_api(args: Namespace, config: Configuration) -> None:
         config.saic_read_timeout = args.saic_read_timeout
     if args.saic_user_timezone is not None:
         config.saic_user_timezone = args.saic_user_timezone
+    config.saic_accept_drifted_status = args.saic_accept_drifted_status
 
 
 def __setup_home_assistant(args: Namespace, config: Configuration) -> None:
@@ -378,6 +379,18 @@ def __add_saic_api_argument_group(
         action=EnvDefault,
         envvar="SAIC_USER_TIMEZONE",
         type=check_timezone,
+    )
+    saic_api.add_argument(
+        "--saic-accept-drifted-status",
+        help="""Accept basic vehicle status when its timestamp differs from the
+                current time by more than 15 minutes. GPS data from such a
+                response is ignored.""",
+        dest="saic_accept_drifted_status",
+        required=False,
+        action=EnvDefault,
+        envvar="SAIC_ACCEPT_DRIFTED_STATUS",
+        default=False,
+        type=check_bool,
     )
     saic_api.add_argument(
         "--messages-request-interval",
