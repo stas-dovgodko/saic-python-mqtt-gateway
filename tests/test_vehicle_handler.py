@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+import time
 from typing import Any
 import unittest
 from unittest.mock import patch
 
 from apscheduler.schedulers.blocking import BlockingScheduler
+import httpx
 import pytest
 from saic_ismart_client_ng import SaicApi
 from saic_ismart_client_ng.api.vehicle.schema import (
@@ -16,6 +19,8 @@ from saic_ismart_client_ng.model import SaicApiConfiguration
 from configuration import Configuration
 from handlers.relogin import ReloginHandler
 from handlers.vehicle import VehicleHandler
+from integrations.abrp.api import AbrpApi
+from integrations.osmand.api import OsmAndApi
 import mqtt_topics
 from vehicle import VehicleState
 from vehicle_info import VehicleInfo
@@ -45,7 +50,9 @@ from .common_mocks import (
     DRIVETRAIN_POWER,
     DRIVETRAIN_REMAINING_CHARGING_TIME,
     DRIVETRAIN_RUNNING,
+    DRIVETRAIN_SOC_BMS,
     DRIVETRAIN_SOC_KWH,
+    DRIVETRAIN_SOC_VEHICLE,
     DRIVETRAIN_VOLTAGE,
     LIGHTS_DIPPED_BEAM,
     LIGHTS_MAIN_BEAM,
@@ -110,6 +117,94 @@ class TestVehicleHandler(unittest.IsolatedAsyncioTestCase):
             vehicle_info,
             self.vehicle_state,
         )
+
+    async def test_integrations_receive_only_accepted_gps(self) -> None:
+        for drift_seconds, accept_drift in [
+            (0, False),
+            (0, True),
+            (-3600, True),
+            (3600, True),
+        ]:
+            with self.subTest(drift_seconds=drift_seconds, accept_drift=accept_drift):
+                self.vehicle_handler.vehicle_state = VehicleState(
+                    self.publisher,
+                    BlockingScheduler(),
+                    f"/vehicles/{VIN}",
+                    self.vehicle_state.vehicle,
+                    accept_drifted_status=accept_drift,
+                )
+                original = get_mock_vehicle_status_resp()
+                original.statusTime = int(time.time()) + drift_seconds
+                original_gps = original.gpsPosition
+                with patch.object(
+                    self.saicapi, "get_vehicle_status", return_value=original
+                ):
+                    (
+                        response,
+                        result,
+                    ) = await self.vehicle_handler.update_vehicle_status()
+
+                assert original.gpsPosition is original_gps
+                assert response.basicVehicleStatus is original.basicVehicleStatus
+                assert result.raw_soc == DRIVETRAIN_SOC_VEHICLE
+                if drift_seconds:
+                    assert response.gpsPosition is None
+                else:
+                    assert response.gpsPosition is original_gps
+
+                abrp = AbrpApi(abrp_api_key="test", abrp_user_token="test")  # noqa: S106
+                osmand = OsmAndApi(
+                    server_uri="https://example.test/osmand",
+                    device_id="test",
+                    use_knots=False,
+                )
+                requests: list[httpx.Request] = []
+
+                def capture(
+                    request: httpx.Request, captured: list[httpx.Request] = requests
+                ) -> httpx.Response:
+                    captured.append(request)
+                    return httpx.Response(200, text="OK")
+
+                try:
+                    for api in (abrp, osmand):
+                        await api.client.aclose()
+                        api.client = httpx.AsyncClient(
+                            transport=httpx.MockTransport(capture)
+                        )
+                    charge = get_mock_charge_management_data_resp()
+                    assert (await abrp.update_abrp(response, charge))[0]
+                    assert (await osmand.update_osmand(response, charge))[0]
+                    assert len(requests) == 2
+                    payloads = [
+                        json.loads(requests[0].url.params["tlm"]),
+                        dict(requests[1].url.params),
+                    ]
+                    for payload in payloads:
+                        assert float(payload["soc"]) == DRIVETRAIN_SOC_BMS
+                        assert "odometer" in payload
+                        assert "ext_temp" in payload
+                        if drift_seconds:
+                            assert (
+                                not {
+                                    "lat",
+                                    "lon",
+                                    "heading",
+                                    "elevation",
+                                    "altitude",
+                                    "speed",
+                                    "hdop",
+                                }
+                                & payload.keys()
+                            )
+                        else:
+                            assert float(payload["lat"]) == LOCATION_LATITUDE
+                            assert float(payload["lon"]) == LOCATION_LONGITUDE
+                            assert float(payload["heading"]) == LOCATION_HEADING
+                            assert float(payload["speed"]) == 2.0
+                finally:
+                    await abrp.close()
+                    await osmand.close()
 
     async def test_update_vehicle_status(self) -> None:
         with patch.object(

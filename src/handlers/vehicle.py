@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import asyncio
+from dataclasses import replace
 import datetime
 import logging
 from typing import TYPE_CHECKING
@@ -318,7 +319,11 @@ class VehicleHandler:
             self.vin_info.vin
         )
         result = self.vehicle_state.handle_vehicle_status(vehicle_status_response)
-        return (vehicle_status_response, result)
+        # Forward only GPS accepted by the status publisher to external services.
+        sanitized_response = replace(
+            vehicle_status_response, gpsPosition=result.gps_position
+        )
+        return (sanitized_response, result)
 
     async def update_charge_status(
         self,
