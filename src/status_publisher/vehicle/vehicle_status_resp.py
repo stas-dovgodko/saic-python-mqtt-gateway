@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import datetime
+import logging
 from typing import TYPE_CHECKING, Final, override
 
 from saic_ismart_client_ng.api.vehicle import VehicleStatusResp
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
 
 
 _INVALID_TIMESTAMPS: Final = frozenset({0, 2147483647})
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -44,9 +46,14 @@ class VehicleStatusRespPublisher(
     VehicleDataPublisher[VehicleStatusResp, VehicleStatusRespProcessingResult]
 ):
     def __init__(
-        self, vin: VehicleInfo, publisher: Publisher, mqtt_vehicle_prefix: str
+        self,
+        vin: VehicleInfo,
+        publisher: Publisher,
+        mqtt_vehicle_prefix: str,
+        accept_drifted_status: bool = False,
     ) -> None:
         super().__init__(vin, publisher, mqtt_vehicle_prefix)
+        self.__accept_drifted_status: Final = accept_drifted_status
         self.__gps_position_publisher: Final[GpsPositionPublisher] = (
             GpsPositionPublisher(vin, publisher, mqtt_vehicle_prefix)
         )
@@ -68,16 +75,20 @@ class VehicleStatusRespPublisher(
         )
         now_time = datetime.datetime.now(tz=datetime.UTC)
         vehicle_status_drift = abs(now_time - vehicle_status_time)
+        gps_position = vehicle_status.gpsPosition
 
         if vehicle_status_drift > datetime.timedelta(minutes=15):
             msg = f"Vehicle status time drifted more than 15 minutes from current time: {vehicle_status_drift}. Server reported {vehicle_status_time}"
-            raise VehicleStatusDriftException(msg)
+            if not self.__accept_drifted_status:
+                raise VehicleStatusDriftException(msg)
+            LOG.warning(
+                "%s. Accepting basic vehicle status but ignoring GPS data", msg
+            )
+            gps_position = None
 
         basic_vehicle_status = vehicle_status.basicVehicleStatus
         if basic_vehicle_status:
-            return self.__on_basic_vehicle_status(
-                basic_vehicle_status, vehicle_status.gpsPosition
-            )
+            return self.__on_basic_vehicle_status(basic_vehicle_status, gps_position)
         msg = f"Missing basic vehicle status data: {basic_vehicle_status}. We'll mark this poll as failed"
         raise MqttGatewayException(msg)
 

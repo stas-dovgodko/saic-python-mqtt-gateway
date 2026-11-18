@@ -390,6 +390,27 @@ class TestVehicleState(unittest.IsolatedAsyncioTestCase):
         ):
             self.vehicle_state.handle_vehicle_status(resp)
 
+    def test_handle_vehicle_status_accepts_drift_when_enabled_without_gps(
+        self,
+    ) -> None:
+        state = VehicleState(
+            self.publisher,
+            BlockingScheduler(),
+            f"/vehicles/{VIN}",
+            self.vehicle_state.vehicle,
+            accept_drifted_status=True,
+        )
+        resp = get_mock_vehicle_status_resp()
+        resp.statusTime = 1000000000  # 2001-09-09, well outside 15 min window
+
+        result = state.handle_vehicle_status(resp)
+
+        assert result.raw_soc == DRIVETRAIN_SOC_VEHICLE
+        assert self.get_topic(mqtt_topics.REFRESH_LAST_VEHICLE_STATE) in self.publisher.map
+        assert self.get_topic(mqtt_topics.LOCATION_POSITION) not in self.publisher.map
+        assert self.get_topic(mqtt_topics.LOCATION_LATITUDE) not in self.publisher.map
+        assert self.get_topic(mqtt_topics.LOCATION_LONGITUDE) not in self.publisher.map
+
     def test_mileage_of_day_published_when_valid(self) -> None:
         """Mileage of day is published when it does not exceed total mileage."""
         vehicle_status_resp = get_mock_vehicle_status_resp()

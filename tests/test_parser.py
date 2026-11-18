@@ -61,3 +61,23 @@ def test_process_command_line_defaults_forced_timezone_to_none(
     )
     config = process_command_line()
     assert config.saic_user_timezone is None
+
+
+def test_process_command_line_accepts_drifted_status_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SAIC_ACCEPT_DRIFTED_STATUS", "true")
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "prog",
+            "--saic-user",
+            "user@example.com",
+            "--saic-password",
+            "secret",
+        ],
+    )
+
+    config = process_command_line()
+
+    assert config.saic_accept_drifted_status is True
